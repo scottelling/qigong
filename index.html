@@ -68,6 +68,17 @@
               <span id="scoreValue">0</span>
               <small>alignment</small>
             </div>
+            <div class="follow-hud" id="followHud" aria-live="polite">
+              <span class="hud-chip is-teacher">
+                <span class="hud-dot" aria-hidden="true"></span>
+                Teacher
+              </span>
+              <span class="hud-chip is-you">
+                <span class="hud-dot" aria-hidden="true"></span>
+                You
+              </span>
+              <span class="hud-status" id="followStatus">Load a guide video</span>
+            </div>
           </div>
 
           <div class="studio-toolbar" aria-label="Camera controls">
@@ -96,6 +107,15 @@
                 <option value="cover">Fill</option>
               </select>
             </label>
+            <label class="select-field compact-field guide-only-control">
+              <span>Target</span>
+              <select id="guideTargetSelect">
+                <option value="center">Center</option>
+                <option value="largest">Largest</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
             <label class="range-field guide-only-control">
               <span>Zoom</span>
               <input type="range" id="guideZoomRange" min="1" max="1.8" value="1" step="0.05" />
@@ -116,6 +136,10 @@
             <button class="secondary-action" id="loadGuideButton">
               <span class="material-symbols-rounded" aria-hidden="true">video_file</span>
               Load guide
+            </button>
+            <button class="secondary-action guide-only-control" id="calibrateOverlayButton">
+              <span class="material-symbols-rounded" aria-hidden="true">center_focus_strong</span>
+              Recenter
             </button>
             <button class="icon-action" id="stopCameraButton" aria-label="Stop camera" title="Stop camera" disabled>
               <span class="material-symbols-rounded" aria-hidden="true">videocam_off</span>
