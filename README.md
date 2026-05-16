@@ -20,6 +20,14 @@ Vercel serves the app over HTTPS, which is required for camera access outside `l
 
 If you connect a custom domain such as `name.scottelling.com`, the app will use the camera on the device that opens that domain. It cannot use the MacBook camera when viewed from an iPhone; browser camera access is always local to the viewing device.
 
+## Camera troubleshooting
+
+If the app says **HTTPS required**, you are opening the LAN preview from a phone, such as `http://10.0.0.11:5173`. Mobile Safari and Chrome block camera access on plain HTTP. Use the deployed Vercel HTTPS URL, or open `http://localhost:5173` on the Mac.
+
+If the app says **Permission blocked**, allow camera access for the site in the browser and reload. On iPhone, check **Settings > Safari > Camera** and make sure it is not set to Deny.
+
+If the app says **Camera busy**, close Zoom, FaceTime, Photo Booth, or other camera tabs, then try again.
+
 ## Routine
 
 1. Rooted Wuji
