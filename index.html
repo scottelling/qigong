@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Qi Gong Flow Mapper</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400..700,0..1,0&family=Roboto:wght@400;500;700;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">Q</div>
+          <div>
+            <p class="eyebrow">Qi Gong</p>
+            <h1>Flow Mapper</h1>
+          </div>
+        </div>
+        <div class="status-cluster" aria-live="polite">
+          <span class="status-pill" id="cameraStatus">
+            <span class="material-symbols-rounded" aria-hidden="true">videocam</span>
+            <span>Camera idle</span>
+          </span>
+          <span class="status-pill" id="modelStatus">
+            <span class="material-symbols-rounded" aria-hidden="true">memory</span>
+            <span>Model idle</span>
+          </span>
+          <span class="status-pill" id="poseStatus">
+            <span class="material-symbols-rounded" aria-hidden="true">monitor_heart</span>
+            <span>No pose</span>
+          </span>
+        </div>
+      </header>
+
+      <main class="practice-grid">
+        <section class="studio-panel" aria-label="Camera movement mapper">
+          <div class="video-frame" id="videoFrame">
+            <video id="cameraVideo" autoplay muted playsinline></video>
+            <canvas id="poseCanvas"></canvas>
+            <div class="guide-panel is-hidden" id="guidePanel">
+              <div class="guide-panel-header">
+                <span>
+                  <span class="material-symbols-rounded" aria-hidden="true">video_file</span>
+                  Guide video
+                </span>
+                <button class="tiny-icon-action" id="clearGuideButton" aria-label="Clear guide video" title="Clear guide video">
+                  <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                </button>
+              </div>
+              <video id="guideVideo" muted playsinline controls loop></video>
+            </div>
+            <div class="empty-state" id="emptyState">
+              <span class="material-symbols-rounded hero-icon" aria-hidden="true">camera_video</span>
+              <h2>Ready for camera</h2>
+              <button class="primary-action" id="enableCameraButton">
+                <span class="material-symbols-rounded" aria-hidden="true">videocam</span>
+                Enable camera
+              </button>
+            </div>
+            <div class="score-badge" aria-live="polite">
+              <span id="scoreValue">0</span>
+              <small>alignment</small>
+            </div>
+          </div>
+
+          <div class="studio-toolbar" aria-label="Camera controls">
+            <label class="select-field">
+              <span>Camera</span>
+              <select id="cameraSelect" disabled>
+                <option>Default camera</option>
+              </select>
+            </label>
+            <label class="toggle-field">
+              <span>Mirror</span>
+              <input type="checkbox" id="mirrorToggle" checked />
+            </label>
+            <label class="toggle-field">
+              <span>Mirror guide</span>
+              <input type="checkbox" id="guideMirrorToggle" checked />
+            </label>
+            <input type="file" id="guideVideoInput" accept="video/*" hidden />
+            <button class="secondary-action" id="loadGuideButton">
+              <span class="material-symbols-rounded" aria-hidden="true">video_file</span>
+              Load guide
+            </button>
+            <button class="icon-action" id="stopCameraButton" aria-label="Stop camera" title="Stop camera" disabled>
+              <span class="material-symbols-rounded" aria-hidden="true">videocam_off</span>
+            </button>
+          </div>
+        </section>
+
+        <aside class="routine-panel" aria-label="Qi Gong routine">
+          <div class="step-header">
+            <div>
+              <p class="eyebrow" id="stepCount">Step 1 of 6</p>
+              <h2 id="stepTitle">Rooted Wuji</h2>
+            </div>
+            <div class="timer-ring" id="timerRing" aria-label="Step timer">
+              <span id="timerText">0:35</span>
+            </div>
+          </div>
+
+          <div class="cue-block">
+            <p class="cue-label">Breath</p>
+            <p id="breathCue">Inhale gently, exhale down through the feet.</p>
+          </div>
+          <div class="cue-block">
+            <p class="cue-label">Movement</p>
+            <p id="movementCue">Feet grounded, spine tall, hands heavy beside the hips.</p>
+          </div>
+          <div class="cue-block feedback-block">
+            <p class="cue-label">Live cue</p>
+            <p id="liveCue">Enable the camera to begin mapping posture.</p>
+          </div>
+
+          <div class="metric-stack" id="metricStack" aria-label="Alignment details"></div>
+
+          <div class="control-row" aria-label="Routine controls">
+            <button class="icon-action" id="prevStepButton" aria-label="Previous step" title="Previous step">
+              <span class="material-symbols-rounded" aria-hidden="true">skip_previous</span>
+            </button>
+            <button class="primary-action" id="startPauseButton">
+              <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
+              Start
+            </button>
+            <button class="icon-action" id="nextStepButton" aria-label="Next step" title="Next step">
+              <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
+            </button>
+            <button class="icon-action" id="resetButton" aria-label="Reset routine" title="Reset routine">
+              <span class="material-symbols-rounded" aria-hidden="true">restart_alt</span>
+            </button>
+          </div>
+
+          <div class="session-summary">
+            <div>
+              <span id="sessionScore">0</span>
+              <small>session avg</small>
+            </div>
+            <div>
+              <span id="flowScore">0</span>
+              <small>flow</small>
+            </div>
+            <div>
+              <span id="timePracticed">0:00</span>
+              <small>practice</small>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <section class="replay-panel" aria-label="Session replay">
+        <div class="replay-header">
+          <div>
+            <p class="eyebrow">Review</p>
+            <h2>Session replay</h2>
+          </div>
+          <div class="replay-actions">
+            <button class="primary-action record-action" id="recordButton">
+              <span class="material-symbols-rounded" aria-hidden="true">radio_button_checked</span>
+              Record
+            </button>
+            <button class="icon-action" id="replayPlayButton" aria-label="Play replay" title="Play replay" disabled>
+              <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
+            </button>
+            <button class="secondary-action" id="liveModeButton" disabled>
+              <span class="material-symbols-rounded" aria-hidden="true">sensors</span>
+              Live
+            </button>
+            <button class="secondary-action" id="exportReplayButton" disabled>
+              <span class="material-symbols-rounded" aria-hidden="true">download</span>
+              Export
+            </button>
+            <button class="icon-action" id="clearReplayButton" aria-label="Clear replay" title="Clear replay" disabled>
+              <span class="material-symbols-rounded" aria-hidden="true">delete</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="timeline-shell">
+          <div class="timeline-track">
+            <input type="range" id="replayTimeline" min="0" max="0" value="0" step="1" disabled />
+            <div class="timeline-markers" id="replayMarkers" aria-hidden="true"></div>
+          </div>
+          <div class="timeline-meta">
+            <span id="replayCurrentTime">0:00</span>
+            <span id="replayDuration">0:00</span>
+          </div>
+        </div>
+
+        <div class="replay-summary">
+          <div>
+            <span id="replaySamples">0</span>
+            <small>frames</small>
+          </div>
+          <div>
+            <span id="replayLowCount">0</span>
+            <small>low moments</small>
+          </div>
+          <div>
+            <span id="replayBestScore">0</span>
+            <small>best</small>
+          </div>
+          <div>
+            <span id="replayFocus">--</span>
+            <small>focus</small>
+          </div>
+        </div>
+
+        <div class="replay-bottom">
+          <div class="cue-block replay-cue">
+            <p class="cue-label">Review cue</p>
+            <p id="replayCue">No recording yet.</p>
+          </div>
+          <div class="issue-list" id="replayIssues" aria-label="Recurring issues"></div>
+        </div>
+      </section>
+
+      <section class="sequence-strip" id="sequenceStrip" aria-label="Routine sequence"></section>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
