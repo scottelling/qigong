@@ -41,9 +41,11 @@ Each movement tracks visible landmarks for hands, shoulders, hips, knees, and fe
 
 ## Guide video mode
 
-Use **Load guide** to choose a local Qi Gong video file. The app shows the video in an inset, extracts a pose outline from the guide, and draws that outline over your camera feed. When a guide is loaded, alignment scoring compares your landmarks to the guide outline instead of the static routine targets.
+Use **Load guide** to choose a local Qi Gong video file. When a guide is loaded, **Follow** mode makes the guide video the main stage, draws a lavender target skeleton over the instructor, and maps your live movement as a green/orange/red skeleton over that target. A small camera preview remains visible so you can confirm the camera sees you.
 
-Leave **Mirror guide** on when the instructor is facing the camera and you want to follow them like a mirror. Turn it off when the clip is filmed from behind or when left and right should match directly.
+Use **Target** when the guide video has multiple people. **Center** is the default and usually selects the main instructor. **Largest**, **Left**, and **Right** are available for clips where the instructor is framed differently.
+
+Use **Recenter** when both your body and the instructor outline are visible but the mapped skeleton feels offset. Leave **Mirror guide** on when the instructor is facing the camera and you want to follow them like a mirror. Turn it off when the clip is filmed from behind or when left and right should match directly.
 
 ## Session replay
 
