@@ -44,6 +44,21 @@ const CONNECTORS = [
   [LANDMARK.rightKnee, LANDMARK.rightAnkle]
 ];
 
+const OVERLAY_LANDMARKS = [
+  LANDMARK.leftShoulder,
+  LANDMARK.rightShoulder,
+  LANDMARK.leftElbow,
+  LANDMARK.rightElbow,
+  LANDMARK.leftWrist,
+  LANDMARK.rightWrist,
+  LANDMARK.leftHip,
+  LANDMARK.rightHip,
+  LANDMARK.leftKnee,
+  LANDMARK.rightKnee,
+  LANDMARK.leftAnkle,
+  LANDMARK.rightAnkle
+];
+
 const COUNTERPART = {
   [LANDMARK.leftShoulder]: LANDMARK.rightShoulder,
   [LANDMARK.rightShoulder]: LANDMARK.leftShoulder,
@@ -114,11 +129,17 @@ const els = {
   video: document.getElementById("cameraVideo"),
   guideVideo: document.getElementById("guideVideo"),
   canvas: document.getElementById("poseCanvas"),
+  videoFrame: document.getElementById("videoFrame"),
+  studioPanel: document.querySelector(".studio-panel"),
   guidePanel: document.getElementById("guidePanel"),
   emptyState: document.getElementById("emptyState"),
   enableCamera: document.getElementById("enableCameraButton"),
   stopCamera: document.getElementById("stopCameraButton"),
   cameraSelect: document.getElementById("cameraSelect"),
+  viewModeInputs: document.querySelectorAll('input[name="viewMode"]'),
+  guideFit: document.getElementById("guideFitSelect"),
+  guideZoom: document.getElementById("guideZoomRange"),
+  overlayOpacity: document.getElementById("overlayOpacityRange"),
   mirrorToggle: document.getElementById("mirrorToggle"),
   guideMirrorToggle: document.getElementById("guideMirrorToggle"),
   guideVideoInput: document.getElementById("guideVideoInput"),
@@ -175,6 +196,10 @@ const state = {
   guideActive: false,
   guideObjectUrl: "",
   guideMirror: true,
+  viewMode: "camera",
+  guideFit: "contain",
+  guideZoom: 1,
+  overlayOpacity: 0.85,
   running: false,
   mirror: true,
   selectedDeviceId: "",
@@ -210,6 +235,7 @@ renderSequence();
 updateStepUI();
 updateDashboard();
 updateReplayUI();
+applyViewSettings();
 
 els.enableCamera.addEventListener("click", () => {
   startCamera();
@@ -281,6 +307,34 @@ els.replayTimeline.addEventListener("input", () => {
   drawFrame();
 });
 
+els.viewModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    if (!input.checked) {
+      return;
+    }
+    state.viewMode = input.value;
+    applyViewSettings();
+    drawFrame();
+  });
+});
+
+els.guideFit.addEventListener("change", () => {
+  state.guideFit = els.guideFit.value;
+  applyViewSettings();
+  drawFrame();
+});
+
+els.guideZoom.addEventListener("input", () => {
+  state.guideZoom = Number(els.guideZoom.value);
+  applyViewSettings();
+  drawFrame();
+});
+
+els.overlayOpacity.addEventListener("input", () => {
+  state.overlayOpacity = Number(els.overlayOpacity.value);
+  drawFrame();
+});
+
 els.mirrorToggle.addEventListener("change", () => {
   state.mirror = els.mirrorToggle.checked;
   els.video.classList.toggle("is-mirrored", state.mirror);
@@ -292,6 +346,7 @@ els.guideMirrorToggle.addEventListener("change", () => {
     state.lastResult = compareToGuide(state.lastLandmarks, state.guideLandmarks);
   }
   updateDashboard();
+  drawFrame();
 });
 
 els.loadGuide.addEventListener("click", () => {
@@ -318,6 +373,10 @@ els.guideVideo.addEventListener("seeked", () => {
   state.guideLastVideoTime = -1;
 });
 
+els.guideVideo.addEventListener("loadedmetadata", () => {
+  drawFrame();
+});
+
 els.cameraSelect.addEventListener("change", async () => {
   state.selectedDeviceId = els.cameraSelect.value;
   if (state.cameraActive) {
@@ -336,6 +395,31 @@ els.sequenceStrip.addEventListener("click", (event) => {
 window.addEventListener("resize", () => {
   drawFrame();
 });
+
+function applyViewSettings() {
+  if (!state.guideActive && state.viewMode === "follow") {
+    state.viewMode = "camera";
+  }
+
+  const followMode = isFollowVideoMode();
+  els.studioPanel.classList.toggle("has-guide", state.guideActive);
+  els.videoFrame.classList.toggle("is-follow-video", followMode);
+  els.guidePanel.classList.toggle("is-hidden", !state.guideActive);
+  els.videoFrame.style.setProperty("--guide-fit", state.guideFit);
+  els.videoFrame.style.setProperty("--guide-zoom", String(state.guideZoom));
+  els.guideFit.value = state.guideFit;
+  els.guideZoom.value = String(state.guideZoom);
+  els.overlayOpacity.value = String(state.overlayOpacity);
+
+  els.viewModeInputs.forEach((input) => {
+    input.checked = input.value === state.viewMode;
+    input.disabled = input.value === "follow" && !state.guideActive;
+  });
+}
+
+function isFollowVideoMode() {
+  return state.viewMode === "follow" && state.guideActive;
+}
 
 async function startCamera() {
   const cameraPreflight = getCameraPreflight();
@@ -451,12 +535,13 @@ async function loadGuideVideo(file) {
   state.guideActive = true;
   state.guideLandmarks = null;
   state.guideLastVideoTime = -1;
+  state.viewMode = "follow";
   state.wristTrail = [];
   els.guideVideo.src = state.guideObjectUrl;
   els.guideVideo.muted = true;
-  els.guidePanel.classList.remove("is-hidden");
   els.loadGuide.innerHTML = `${materialIcon("video_file")}Change guide`;
   state.lastResult = noPoseResult("Guide video loaded. Enable the camera and fit your body into the ghost outline.");
+  applyViewSettings();
   updateDashboard();
   startLoop();
 
@@ -474,10 +559,10 @@ function clearGuideVideo() {
   state.guideActive = false;
   state.guideLandmarks = null;
   state.guideLastVideoTime = -1;
+  state.viewMode = "camera";
   els.guideVideo.pause();
   els.guideVideo.removeAttribute("src");
   els.guideVideo.load();
-  els.guidePanel.classList.add("is-hidden");
   els.guideVideoInput.value = "";
   els.loadGuide.innerHTML = `${materialIcon("video_file")}Load guide`;
   if (state.guideObjectUrl) {
@@ -487,6 +572,7 @@ function clearGuideVideo() {
   state.lastResult = state.cameraActive
     ? noPoseResult("Guide cleared. Static routine targets are active.")
     : noPoseResult("Enable the camera to begin mapping posture.");
+  applyViewSettings();
   updateDashboard();
 }
 
@@ -1138,6 +1224,11 @@ function drawFrame() {
     return;
   }
 
+  if (isFollowVideoMode()) {
+    drawFollowVideoFrame(dims);
+    return;
+  }
+
   if (!state.cameraActive) {
     drawIdleGuide(dims);
     return;
@@ -1303,6 +1394,82 @@ function drawFramingGuide(dims) {
   ctx.restore();
 }
 
+function drawFollowVideoFrame(dims) {
+  drawGuideContentFrame(dims);
+
+  ctx.save();
+  const clip = guideMediaRect(dims);
+  ctx.beginPath();
+  ctx.rect(clip.x, clip.y, clip.width, clip.height);
+  ctx.clip();
+
+  if (state.guideLandmarks) {
+    drawSkeleton(dims, state.guideLandmarks, {
+      project: (point) => projectGuidePoint(point, dims),
+      lineColor: "rgba(218, 190, 232, 0.62)",
+      jointColor: "rgba(244, 191, 114, 0.82)",
+      width: 3,
+      haloWidth: 8,
+      haloColor: "rgba(5, 7, 10, 0.36)",
+      alpha: 0.62,
+      visibilityThreshold: 0.22
+    });
+  }
+
+  if (state.cameraActive && state.lastLandmarks && state.guideLandmarks) {
+    const overlay = buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks);
+    if (overlay) {
+      drawSkeleton(dims, overlay, {
+        project: (point) => projectGuidePoint(point, dims),
+        lineColor: state.smoothScore >= 72 ? "#9fe7bd" : state.smoothScore >= 45 ? "#f0b35e" : "#ff8a80",
+        jointColor: "#ffffff",
+        width: 5,
+        haloWidth: 13,
+        haloColor: "rgba(5, 7, 10, 0.62)",
+        alpha: state.overlayOpacity,
+        visibilityThreshold: 0.2
+      });
+    }
+  }
+
+  ctx.restore();
+
+  if (!state.cameraActive) {
+    drawFollowHint(dims, "Enable the camera to overlay your movement.");
+  } else if (!state.lastLandmarks) {
+    drawFollowHint(dims, "Step into frame so your skeleton can map onto the video.");
+  } else if (!state.guideLandmarks) {
+    drawFollowHint(dims, "Press play or scrub the guide video to a clear pose.");
+  }
+}
+
+function drawGuideContentFrame(dims) {
+  const rect = guideMediaRect(dims);
+  ctx.save();
+  ctx.strokeStyle = "rgba(156, 202, 255, 0.28)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 12]);
+  roundedRect(ctx, rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2, 8);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFollowHint(dims, text) {
+  const width = Math.min(430, dims.width - 32);
+  const x = (dims.width - width) / 2;
+  const y = Math.max(72, dims.height * 0.12);
+
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 19, 24, 0.78)";
+  roundedRect(ctx, x, y, width, 54, 8);
+  ctx.fill();
+  ctx.fillStyle = "#e3e2e8";
+  ctx.font = "800 14px Roboto, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(text, dims.width / 2, y + 33);
+  ctx.restore();
+}
+
 function drawTargetGuide(dims, landmarks) {
   const body = bodyFrom(landmarks);
   if (!body.upperReady) {
@@ -1415,28 +1582,35 @@ function drawTrailSide(dims, points, color) {
   ctx.stroke();
 }
 
-function drawSkeleton(dims, landmarks) {
+function drawSkeleton(dims, landmarks, options = {}) {
   const score = state.smoothScore;
-  const lineColor = score >= 72 ? "#9fe7bd" : score >= 45 ? "#f0b35e" : "#ef776f";
+  const lineColor = options.lineColor || (score >= 72 ? "#9fe7bd" : score >= 45 ? "#f0b35e" : "#ef776f");
+  const jointColor = options.jointColor || "#ffffff";
+  const project = options.project || ((point) => projectPoint(point, dims));
+  const visibilityThreshold = options.visibilityThreshold ?? 0.32;
+  const width = options.width || 4;
+  const haloWidth = options.haloWidth || 8;
+  const haloColor = options.haloColor || "rgba(17, 21, 19, 0.52)";
   ctx.save();
+  ctx.globalAlpha = options.alpha ?? 1;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
   CONNECTORS.forEach(([a, b]) => {
-    if (!isVisible(landmarks, a, 0.32) || !isVisible(landmarks, b, 0.32)) {
+    if (!isVisible(landmarks, a, visibilityThreshold) || !isVisible(landmarks, b, visibilityThreshold)) {
       return;
     }
-    const start = projectPoint(landmarks[a], dims);
-    const end = projectPoint(landmarks[b], dims);
-    ctx.strokeStyle = "rgba(17, 21, 19, 0.52)";
-    ctx.lineWidth = 8;
+    const start = project(landmarks[a]);
+    const end = project(landmarks[b]);
+    ctx.strokeStyle = haloColor;
+    ctx.lineWidth = haloWidth;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
 
     ctx.strokeStyle = lineColor;
-    ctx.lineWidth = 4;
+    ctx.lineWidth = width;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
@@ -1457,11 +1631,11 @@ function drawSkeleton(dims, landmarks) {
     LANDMARK.leftAnkle,
     LANDMARK.rightAnkle
   ].forEach((index) => {
-    if (!isVisible(landmarks, index, 0.32)) {
+    if (!isVisible(landmarks, index, visibilityThreshold)) {
       return;
     }
-    const p = projectPoint(landmarks[index], dims);
-    ctx.fillStyle = index === LANDMARK.leftWrist || index === LANDMARK.rightWrist ? "#ffffff" : lineColor;
+    const p = project(landmarks[index]);
+    ctx.fillStyle = index === LANDMARK.leftWrist || index === LANDMARK.rightWrist ? jointColor : lineColor;
     ctx.strokeStyle = "rgba(17, 21, 19, 0.66)";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -1489,6 +1663,35 @@ function projectPoint(point, dims) {
   }
 
   return { x, y };
+}
+
+function projectGuidePoint(point, dims) {
+  const rect = guideMediaRect(dims);
+  return {
+    x: rect.x + point.x * rect.width,
+    y: rect.y + point.y * rect.height
+  };
+}
+
+function guideMediaRect(dims) {
+  const videoWidth = els.guideVideo.videoWidth || 16;
+  const videoHeight = els.guideVideo.videoHeight || 9;
+  const zoom = Math.max(state.guideZoom || 1, 1);
+  const boxWidth = dims.width * zoom;
+  const boxHeight = dims.height * zoom;
+  const scale =
+    state.guideFit === "cover"
+      ? Math.max(boxWidth / videoWidth, boxHeight / videoHeight)
+      : Math.min(boxWidth / videoWidth, boxHeight / videoHeight);
+  const width = videoWidth * scale;
+  const height = videoHeight * scale;
+
+  return {
+    x: (dims.width - width) / 2,
+    y: (dims.height - height) / 2,
+    width,
+    height
+  };
 }
 
 function projectSavedPoint(point, dims, options = {}) {
@@ -1809,6 +2012,71 @@ function scoreGuideGroup(group, userLandmarks, guideLandmarks, userBody, guideBo
     label: group.label,
     score: average(scores),
     cue: group.cue
+  };
+}
+
+function buildUserGuideOverlay(userLandmarks, guideLandmarks) {
+  const shared = OVERLAY_LANDMARKS.filter(
+    (index) => isVisible(userLandmarks, index, 0.2) && isVisible(guideLandmarks, guideIndexFor(index), 0.18)
+  );
+
+  if (shared.length < 2) {
+    return null;
+  }
+
+  const userFit = landmarkFit(userLandmarks, shared);
+  const guideFit = landmarkFit(
+    guideLandmarks,
+    shared.map((index) => guideIndexFor(index))
+  );
+
+  if (!userFit || !guideFit) {
+    return null;
+  }
+
+  return OVERLAY_LANDMARKS.reduce((overlay, index) => {
+    const point = userLandmarks[index];
+    if (!isVisible(userLandmarks, index, 0.2)) {
+      return overlay;
+    }
+
+    let x = (point.x - userFit.center.x) / userFit.width;
+    if (state.guideMirror) {
+      x *= -1;
+    }
+
+    overlay[index] = {
+      x: guideFit.center.x + x * guideFit.width,
+      y: guideFit.center.y + ((point.y - userFit.center.y) / userFit.height) * guideFit.height,
+      visibility: point.visibility ?? 1
+    };
+    return overlay;
+  }, {});
+}
+
+function landmarkFit(landmarks, indexes) {
+  const points = indexes.map((index) => landmarks[index]).filter(Boolean);
+
+  if (points.length < 2) {
+    return null;
+  }
+
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 0.08);
+  const height = Math.max(maxY - minY, 0.12);
+
+  return {
+    center: {
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2
+    },
+    width,
+    height
   };
 }
 
