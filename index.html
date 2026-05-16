@@ -71,11 +71,38 @@
           </div>
 
           <div class="studio-toolbar" aria-label="Camera controls">
+            <div class="segmented-control" id="viewModeControl" aria-label="View mode">
+              <label>
+                <input type="radio" name="viewMode" value="camera" checked />
+                <span class="material-symbols-rounded" aria-hidden="true">videocam</span>
+                Camera
+              </label>
+              <label>
+                <input type="radio" name="viewMode" value="follow" />
+                <span class="material-symbols-rounded" aria-hidden="true">movie</span>
+                Follow
+              </label>
+            </div>
             <label class="select-field">
               <span>Camera</span>
               <select id="cameraSelect" disabled>
                 <option>Default camera</option>
               </select>
+            </label>
+            <label class="select-field compact-field guide-only-control">
+              <span>Video fit</span>
+              <select id="guideFitSelect">
+                <option value="contain">Fit</option>
+                <option value="cover">Fill</option>
+              </select>
+            </label>
+            <label class="range-field guide-only-control">
+              <span>Zoom</span>
+              <input type="range" id="guideZoomRange" min="1" max="1.8" value="1" step="0.05" />
+            </label>
+            <label class="range-field guide-only-control">
+              <span>Overlay</span>
+              <input type="range" id="overlayOpacityRange" min="0.25" max="1" value="0.85" step="0.05" />
             </label>
             <label class="toggle-field">
               <span>Mirror</span>
