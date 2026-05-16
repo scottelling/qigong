@@ -1153,7 +1153,6 @@ function drawFrame() {
   } else {
     drawTargetGuide(dims, state.lastLandmarks);
   }
-  drawTrail(dims);
   drawSkeleton(dims, state.lastLandmarks);
 }
 
