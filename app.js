@@ -138,8 +138,10 @@ const els = {
   cameraSelect: document.getElementById("cameraSelect"),
   viewModeInputs: document.querySelectorAll('input[name="viewMode"]'),
   guideFit: document.getElementById("guideFitSelect"),
+  guideTarget: document.getElementById("guideTargetSelect"),
   guideZoom: document.getElementById("guideZoomRange"),
   overlayOpacity: document.getElementById("overlayOpacityRange"),
+  calibrateOverlay: document.getElementById("calibrateOverlayButton"),
   mirrorToggle: document.getElementById("mirrorToggle"),
   guideMirrorToggle: document.getElementById("guideMirrorToggle"),
   guideVideoInput: document.getElementById("guideVideoInput"),
@@ -150,6 +152,7 @@ const els = {
   poseStatus: document.getElementById("poseStatus"),
   scoreBadge: document.querySelector(".score-badge"),
   scoreValue: document.getElementById("scoreValue"),
+  followStatus: document.getElementById("followStatus"),
   stepCount: document.getElementById("stepCount"),
   stepTitle: document.getElementById("stepTitle"),
   timerRing: document.getElementById("timerRing"),
@@ -198,8 +201,11 @@ const state = {
   guideMirror: true,
   viewMode: "camera",
   guideFit: "contain",
+  guideTarget: "center",
   guideZoom: 1,
   overlayOpacity: 0.85,
+  overlayOffset: { x: 0, y: 0 },
+  overlayCalibrated: false,
   running: false,
   mirror: true,
   selectedDeviceId: "",
@@ -209,9 +215,13 @@ const state = {
   lastClock: 0,
   lastVideoTime: -1,
   guideLastVideoTime: -1,
+  guidePoseCount: 0,
+  guidePoseIndex: -1,
+  guidePoseQuality: 0,
   animationId: 0,
   lastLandmarks: null,
   guideLandmarks: null,
+  overlayLandmarks: null,
   lastResult: noPoseResult("Enable the camera to begin mapping posture."),
   smoothScore: 0,
   poseConfidence: 0,
@@ -324,6 +334,16 @@ els.guideFit.addEventListener("change", () => {
   drawFrame();
 });
 
+els.guideTarget.addEventListener("change", () => {
+  state.guideTarget = els.guideTarget.value;
+  state.guidePoseIndex = -1;
+  state.guideLandmarks = null;
+  state.overlayLandmarks = null;
+  state.overlayOffset = { x: 0, y: 0 };
+  state.overlayCalibrated = false;
+  drawFrame();
+});
+
 els.guideZoom.addEventListener("input", () => {
   state.guideZoom = Number(els.guideZoom.value);
   applyViewSettings();
@@ -333,6 +353,10 @@ els.guideZoom.addEventListener("input", () => {
 els.overlayOpacity.addEventListener("input", () => {
   state.overlayOpacity = Number(els.overlayOpacity.value);
   drawFrame();
+});
+
+els.calibrateOverlay.addEventListener("click", () => {
+  recenterOverlay();
 });
 
 els.mirrorToggle.addEventListener("change", () => {
@@ -408,8 +432,11 @@ function applyViewSettings() {
   els.videoFrame.style.setProperty("--guide-fit", state.guideFit);
   els.videoFrame.style.setProperty("--guide-zoom", String(state.guideZoom));
   els.guideFit.value = state.guideFit;
+  els.guideTarget.value = state.guideTarget;
   els.guideZoom.value = String(state.guideZoom);
   els.overlayOpacity.value = String(state.overlayOpacity);
+  els.calibrateOverlay.disabled = !state.guideActive || !state.cameraActive;
+  els.followStatus.textContent = followStatusText();
 
   els.viewModeInputs.forEach((input) => {
     input.checked = input.value === state.viewMode;
@@ -419,6 +446,77 @@ function applyViewSettings() {
 
 function isFollowVideoMode() {
   return state.viewMode === "follow" && state.guideActive;
+}
+
+function followStatusText() {
+  if (!state.guideActive) {
+    return "Load a guide video";
+  }
+
+  if (!state.guideLandmarks) {
+    return "Finding teacher";
+  }
+
+  if (!state.cameraActive) {
+    return `${targetLabel()} target`;
+  }
+
+  if (!state.lastLandmarks) {
+    return "Finding you";
+  }
+
+  const mapped = state.overlayLandmarks ? "mapped" : "partial";
+  const calibrated = state.overlayCalibrated ? "recentered" : "auto";
+  return `${targetLabel()} target / ${mapped} / ${calibrated}`;
+}
+
+function targetLabel() {
+  return `${state.guideTarget}${state.guidePoseCount > 1 ? ` ${state.guidePoseIndex + 1}/${state.guidePoseCount}` : ""}`;
+}
+
+function recenterOverlay() {
+  if (!state.lastLandmarks || !state.guideLandmarks) {
+    state.lastResult = noPoseResult("Camera and guide pose both need to be visible before recentering.");
+    updateDashboard();
+    return;
+  }
+
+  state.overlayOffset = { x: 0, y: 0 };
+  const overlay = buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks, { skipCalibration: true });
+  const shared = OVERLAY_LANDMARKS.filter(
+    (index) => overlay?.[index] && isVisible(state.guideLandmarks, guideIndexFor(index), 0.18)
+  );
+
+  if (!overlay || shared.length < 2) {
+    state.lastResult = noPoseResult("Bring more of your shoulders and hands into view, then recenter.");
+    updateDashboard();
+    return;
+  }
+
+  const overlayFit = landmarkFit(overlay, shared);
+  const guideFit = landmarkFit(
+    state.guideLandmarks,
+    shared.map((index) => guideIndexFor(index))
+  );
+
+  if (!overlayFit || !guideFit) {
+    state.lastResult = noPoseResult("Could not recenter from this frame. Try a clearer pose.");
+    updateDashboard();
+    return;
+  }
+
+  state.overlayOffset = {
+    x: guideFit.center.x - overlayFit.center.x,
+    y: guideFit.center.y - overlayFit.center.y
+  };
+  state.overlayCalibrated = true;
+  state.overlayLandmarks = buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks);
+  state.lastResult = {
+    ...state.lastResult,
+    cue: "Overlay recentered. Fit the green figure into the teacher outline."
+  };
+  updateDashboard();
+  drawFrame();
 }
 
 async function startCamera() {
@@ -535,6 +633,12 @@ async function loadGuideVideo(file) {
   state.guideActive = true;
   state.guideLandmarks = null;
   state.guideLastVideoTime = -1;
+  state.guidePoseCount = 0;
+  state.guidePoseIndex = -1;
+  state.guidePoseQuality = 0;
+  state.overlayLandmarks = null;
+  state.overlayOffset = { x: 0, y: 0 };
+  state.overlayCalibrated = false;
   state.viewMode = "follow";
   state.wristTrail = [];
   els.guideVideo.src = state.guideObjectUrl;
@@ -559,6 +663,12 @@ function clearGuideVideo() {
   state.guideActive = false;
   state.guideLandmarks = null;
   state.guideLastVideoTime = -1;
+  state.guidePoseCount = 0;
+  state.guidePoseIndex = -1;
+  state.guidePoseQuality = 0;
+  state.overlayLandmarks = null;
+  state.overlayOffset = { x: 0, y: 0 };
+  state.overlayCalibrated = false;
   state.viewMode = "camera";
   els.guideVideo.pause();
   els.guideVideo.removeAttribute("src");
@@ -593,6 +703,7 @@ function stopCamera(options = {}) {
   state.stream = null;
   state.cameraActive = false;
   state.lastLandmarks = null;
+  state.overlayLandmarks = null;
   state.lastVideoTime = -1;
   state.poseConfidence = 0;
   state.running = false;
@@ -669,7 +780,7 @@ async function loadPoseModel() {
 
   state.modelPromise = (async () => {
     setStatus(els.modelStatus, "Loading model", "warn", "cpu");
-    state.poseLandmarker = await createPoseLandmarker();
+    state.poseLandmarker = await createPoseLandmarker({ numPoses: 1 });
     setStatus(els.modelStatus, "Model ready", "good", "cpu");
     return state.poseLandmarker;
   })();
@@ -688,7 +799,12 @@ async function loadGuideModel() {
 
   state.guideModelPromise = (async () => {
     setStatus(els.modelStatus, "Loading guide", "warn", "cpu");
-    state.guideLandmarker = await createPoseLandmarker();
+    state.guideLandmarker = await createPoseLandmarker({
+      numPoses: 4,
+      minPoseDetectionConfidence: 0.32,
+      minPosePresenceConfidence: 0.32,
+      minTrackingConfidence: 0.32
+    });
     setStatus(els.modelStatus, state.poseLandmarker ? "Models ready" : "Guide ready", "good", "cpu");
     return state.guideLandmarker;
   })();
@@ -696,7 +812,7 @@ async function loadGuideModel() {
   return state.guideModelPromise;
 }
 
-async function createPoseLandmarker() {
+async function createPoseLandmarker(settings = {}) {
   const { PoseLandmarker, vision } = await loadVisionRuntime();
   const baseOptions = {
     modelAssetPath: MODEL_URL
@@ -705,10 +821,10 @@ async function createPoseLandmarker() {
   const options = {
     baseOptions: { ...baseOptions, delegate: "GPU" },
     runningMode: "VIDEO",
-    numPoses: 1,
-    minPoseDetectionConfidence: 0.45,
-    minPosePresenceConfidence: 0.45,
-    minTrackingConfidence: 0.45
+    numPoses: settings.numPoses || 1,
+    minPoseDetectionConfidence: settings.minPoseDetectionConfidence ?? 0.45,
+    minPosePresenceConfidence: settings.minPosePresenceConfidence ?? 0.45,
+    minTrackingConfidence: settings.minTrackingConfidence ?? 0.45
   };
 
   try {
@@ -794,11 +910,80 @@ function detectGuidePose(now) {
 
   try {
     const result = state.guideLandmarker.detectForVideo(els.guideVideo, now);
-    state.guideLandmarks = result.landmarks?.[0] || null;
+    const poses = result.landmarks || [];
+    const selected = selectGuidePose(poses);
+    state.guidePoseCount = poses.length;
+    if (selected) {
+      const switchedPose = selected.index !== state.guidePoseIndex;
+      state.guidePoseIndex = selected.index;
+      state.guidePoseQuality = selected.quality;
+      state.guideLandmarks = switchedPose
+        ? selected.landmarks
+        : smoothLandmarks(state.guideLandmarks, selected.landmarks, 0.5);
+      if (state.lastLandmarks) {
+        state.overlayLandmarks = buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks);
+        state.lastResult = compareToGuide(state.lastLandmarks, state.guideLandmarks);
+      }
+    } else {
+      state.guidePoseIndex = -1;
+      state.guidePoseQuality = 0;
+      state.guideLandmarks = null;
+      state.overlayLandmarks = null;
+    }
   } catch (error) {
     console.error(error);
     state.guideLandmarks = null;
+    state.guidePoseCount = 0;
+    state.guidePoseIndex = -1;
+    state.guidePoseQuality = 0;
   }
+}
+
+function selectGuidePose(poses) {
+  const candidates = poses
+    .map((landmarks, index) => guidePoseCandidate(landmarks, index))
+    .filter(Boolean);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0];
+}
+
+function guidePoseCandidate(landmarks, index) {
+  const visible = OVERLAY_LANDMARKS.filter((pointIndex) => isVisible(landmarks, pointIndex, 0.18));
+  const fit = landmarkFit(landmarks, visible);
+
+  if (!fit || visible.length < 3) {
+    return null;
+  }
+
+  const area = fit.width * fit.height;
+  const centerDistance = Math.abs(fit.center.x - 0.5);
+  const confidence = average(visible.map((pointIndex) => landmarks[pointIndex]?.visibility ?? 0.5));
+  const sideScore = state.guideTarget === "left" ? 1 - fit.center.x : fit.center.x;
+  let score = confidence + area * 2;
+
+  if (state.guideTarget === "center") {
+    score += 1.4 - centerDistance * 2.2;
+  } else if (state.guideTarget === "largest") {
+    score += area * 4;
+  } else {
+    score += sideScore * 1.8;
+  }
+
+  if (index === state.guidePoseIndex) {
+    score += 0.18;
+  }
+
+  return {
+    index,
+    landmarks,
+    quality: clamp01(confidence),
+    score
+  };
 }
 
 function detectPose(now) {
@@ -824,6 +1009,7 @@ function detectPose(now) {
   const landmarks = result.landmarks?.[0];
   if (!landmarks) {
     state.lastLandmarks = null;
+    state.overlayLandmarks = null;
     state.poseConfidence = 0;
     state.smoothScore = lerp(state.smoothScore, 0, 0.14);
     state.lastResult = noPoseResult("Step fully into frame so shoulders, hands, hips, and feet are visible.");
@@ -834,6 +1020,8 @@ function detectPose(now) {
   state.lastLandmarks = landmarks;
   state.poseConfidence = confidenceFor(landmarks);
   updateMotion(landmarks);
+  state.overlayLandmarks =
+    state.guideActive && state.guideLandmarks ? buildUserGuideOverlay(landmarks, state.guideLandmarks) : null;
 
   const evaluator = routine[state.stepIndex].evaluate;
   const evaluated = state.guideActive && state.guideLandmarks
@@ -921,6 +1109,8 @@ function updateDashboard() {
   els.timePracticed.textContent = formatSeconds(state.practicedSeconds);
   els.sessionScore.textContent = String(Math.round(average(state.allScores)));
   els.flowScore.textContent = String(Math.round(state.flow * 100));
+  els.followStatus.textContent = followStatusText();
+  els.calibrateOverlay.disabled = !state.guideActive || !state.cameraActive || !state.guideLandmarks || !state.lastLandmarks;
   renderMetrics(replayFrame?.parts ?? state.lastResult.parts);
   updateActiveCards();
 }
@@ -1406,33 +1596,37 @@ function drawFollowVideoFrame(dims) {
   if (state.guideLandmarks) {
     drawSkeleton(dims, state.guideLandmarks, {
       project: (point) => projectGuidePoint(point, dims),
-      lineColor: "rgba(218, 190, 232, 0.62)",
-      jointColor: "rgba(244, 191, 114, 0.82)",
-      width: 3,
-      haloWidth: 8,
-      haloColor: "rgba(5, 7, 10, 0.36)",
-      alpha: 0.62,
-      visibilityThreshold: 0.22
+      lineColor: "rgba(218, 190, 232, 0.92)",
+      jointColor: "rgba(244, 191, 114, 0.96)",
+      width: 5,
+      haloWidth: 15,
+      haloColor: "rgba(5, 7, 10, 0.6)",
+      alpha: 0.88,
+      visibilityThreshold: 0.18
     });
+    drawGuideTargetRings(dims, state.guideLandmarks);
   }
 
   if (state.cameraActive && state.lastLandmarks && state.guideLandmarks) {
-    const overlay = buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks);
+    const overlay = state.overlayLandmarks || buildUserGuideOverlay(state.lastLandmarks, state.guideLandmarks);
     if (overlay) {
+      drawMismatchLines(dims, overlay, state.guideLandmarks);
       drawSkeleton(dims, overlay, {
         project: (point) => projectGuidePoint(point, dims),
         lineColor: state.smoothScore >= 72 ? "#9fe7bd" : state.smoothScore >= 45 ? "#f0b35e" : "#ff8a80",
         jointColor: "#ffffff",
-        width: 5,
-        haloWidth: 13,
-        haloColor: "rgba(5, 7, 10, 0.62)",
+        width: 6,
+        haloWidth: 16,
+        haloColor: "rgba(5, 7, 10, 0.72)",
         alpha: state.overlayOpacity,
-        visibilityThreshold: 0.2
+        visibilityThreshold: 0.12
       });
     }
   }
 
   ctx.restore();
+
+  drawCameraPreviewSkeleton(dims);
 
   if (!state.cameraActive) {
     drawFollowHint(dims, "Enable the camera to overlay your movement.");
@@ -1467,6 +1661,97 @@ function drawFollowHint(dims, text) {
   ctx.font = "800 14px Roboto, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(text, dims.width / 2, y + 33);
+  ctx.restore();
+}
+
+function drawGuideTargetRings(dims, guideLandmarks) {
+  const points = [LANDMARK.leftWrist, LANDMARK.rightWrist, LANDMARK.leftElbow, LANDMARK.rightElbow];
+  ctx.save();
+  ctx.lineWidth = 3;
+
+  points.forEach((index) => {
+    const point = guideLandmarks[index];
+    if (!isVisible(guideLandmarks, index, 0.18)) {
+      return;
+    }
+
+    const p = projectGuidePoint(point, dims);
+    ctx.strokeStyle = index === LANDMARK.leftWrist || index === LANDMARK.rightWrist ? "#f4bf72" : "#dabee8";
+    ctx.fillStyle = "rgba(5, 7, 10, 0.36)";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, index === LANDMARK.leftWrist || index === LANDMARK.rightWrist ? 15 : 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+function drawMismatchLines(dims, overlayLandmarks, guideLandmarks) {
+  const indexes = [
+    LANDMARK.leftWrist,
+    LANDMARK.rightWrist,
+    LANDMARK.leftElbow,
+    LANDMARK.rightElbow,
+    LANDMARK.leftShoulder,
+    LANDMARK.rightShoulder
+  ];
+  const scale = poseScale(guideLandmarks);
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.setLineDash([6, 9]);
+
+  indexes.forEach((index) => {
+    const overlayPoint = overlayLandmarks[index];
+    const guideIndex = guideIndexFor(index);
+    const guidePoint = guideLandmarks[guideIndex];
+
+    if (!overlayPoint || !isVisible(guideLandmarks, guideIndex, 0.18)) {
+      return;
+    }
+
+    const miss = distance(overlayPoint, guidePoint) / scale;
+    const start = projectGuidePoint(overlayPoint, dims);
+    const end = projectGuidePoint(guidePoint, dims);
+    const good = miss < 0.22;
+    ctx.strokeStyle = good ? "rgba(155, 217, 177, 0.46)" : "rgba(255, 138, 128, 0.72)";
+    ctx.lineWidth = good ? 2 : 3;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+function drawCameraPreviewSkeleton(dims) {
+  if (!isFollowVideoMode() || !state.cameraActive || !state.lastLandmarks) {
+    return;
+  }
+
+  const rect = cameraPreviewRect(dims);
+  ctx.save();
+  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 8);
+  ctx.clip();
+  drawSkeleton(dims, state.lastLandmarks, {
+    project: (point) => projectCameraPreviewPoint(point, rect),
+    lineColor: "#9ccaff",
+    jointColor: "#ffffff",
+    width: 2.5,
+    haloWidth: 7,
+    haloColor: "rgba(5, 7, 10, 0.68)",
+    alpha: 0.92,
+    visibilityThreshold: 0.16
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(156, 202, 255, 0.48)";
+  ctx.lineWidth = 1.5;
+  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 8);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -1670,6 +1955,27 @@ function projectGuidePoint(point, dims) {
   return {
     x: rect.x + point.x * rect.width,
     y: rect.y + point.y * rect.height
+  };
+}
+
+function projectCameraPreviewPoint(point, rect) {
+  let x = rect.x + point.x * rect.width;
+  const y = rect.y + point.y * rect.height;
+
+  if (state.mirror) {
+    x = rect.x + rect.width - point.x * rect.width;
+  }
+
+  return { x, y };
+}
+
+function cameraPreviewRect(dims) {
+  const compact = dims.width < 560;
+  return {
+    x: compact ? 10 : 16,
+    y: dims.height - (compact ? 90 : 126) - (compact ? 10 : 16),
+    width: compact ? 126 : Math.min(188, dims.width * 0.28),
+    height: compact ? 90 : 126
   };
 }
 
@@ -1927,16 +2233,7 @@ function compareToGuide(userLandmarks, guideLandmarks) {
     return noPoseResult("Guide pose is not visible yet. Press play or choose a clearer frame.");
   }
 
-  const userBody = bodyFrom(userLandmarks);
-  const guideBody = bodyFrom(guideLandmarks);
-
-  if (!userBody.upperReady) {
-    return noPoseResult("Keep your shoulders, elbows, hands, and hips visible.");
-  }
-
-  if (!guideBody.upperReady) {
-    return noPoseResult("Guide video pose is partial. Pick a clip with the full upper body visible.");
-  }
+  const overlay = state.overlayLandmarks || buildUserGuideOverlay(userLandmarks, guideLandmarks);
 
   const groups = [
     {
@@ -1965,12 +2262,14 @@ function compareToGuide(userLandmarks, guideLandmarks) {
     }
   ];
 
-  const parts = groups
-    .map((group) => scoreGuideGroup(group, userLandmarks, guideLandmarks, userBody, guideBody))
-    .filter(Boolean);
+  if (!overlay) {
+    return noPoseResult("Keep your shoulders and hands visible so your figure can map to the guide.");
+  }
+
+  const parts = groups.map((group) => scoreGuideGroup(group, overlay, guideLandmarks)).filter(Boolean);
 
   if (!parts.length) {
-    return noPoseResult("Guide pose is not clear enough to map. Choose a brighter, wider video.");
+    return noPoseResult("Guide pose is too cropped to compare. Try a clearer frame or another target.");
   }
 
   parts.push({
@@ -1982,26 +2281,20 @@ function compareToGuide(userLandmarks, guideLandmarks) {
   return combineScores(parts);
 }
 
-function scoreGuideGroup(group, userLandmarks, guideLandmarks, userBody, guideBody) {
+function scoreGuideGroup(group, overlayLandmarks, guideLandmarks) {
   const scores = [];
+  const scale = poseScale(guideLandmarks);
 
   group.indexes.forEach((index) => {
     const guideIndex = guideIndexFor(index);
-    if (!isVisible(guideLandmarks, guideIndex, 0.25)) {
+    const overlayPoint = overlayLandmarks[index];
+    const guidePoint = guideLandmarks[guideIndex];
+
+    if (!overlayPoint || !isVisible(guideLandmarks, guideIndex, 0.18)) {
       return;
     }
 
-    if (!isVisible(userLandmarks, index, 0.25)) {
-      scores.push(0);
-      return;
-    }
-
-    const userPoint = normalizeToBody(userLandmarks[index], userBody);
-    const guidePoint = normalizeToBody(guideLandmarks[guideIndex], guideBody);
-    if (state.guideMirror) {
-      guidePoint.x *= -1;
-    }
-    scores.push(inverseScore(distance(userPoint, guidePoint), group.tolerance));
+    scores.push(inverseScore(distance(overlayPoint, guidePoint) / scale, group.tolerance));
   });
 
   if (!scores.length) {
@@ -2015,7 +2308,7 @@ function scoreGuideGroup(group, userLandmarks, guideLandmarks, userBody, guideBo
   };
 }
 
-function buildUserGuideOverlay(userLandmarks, guideLandmarks) {
+function buildUserGuideOverlay(userLandmarks, guideLandmarks, options = {}) {
   const shared = OVERLAY_LANDMARKS.filter(
     (index) => isVisible(userLandmarks, index, 0.2) && isVisible(guideLandmarks, guideIndexFor(index), 0.18)
   );
@@ -2024,6 +2317,60 @@ function buildUserGuideOverlay(userLandmarks, guideLandmarks) {
     return null;
   }
 
+  const mapped = buildBodyMappedOverlay(userLandmarks, guideLandmarks) || buildFitMappedOverlay(userLandmarks, guideLandmarks, shared);
+
+  if (!mapped) {
+    return null;
+  }
+
+  if (options.skipCalibration) {
+    return mapped;
+  }
+
+  return applyOverlayOffset(mapped);
+}
+
+function buildBodyMappedOverlay(userLandmarks, guideLandmarks) {
+  const userReady = [
+    LANDMARK.leftShoulder,
+    LANDMARK.rightShoulder,
+    LANDMARK.leftHip,
+    LANDMARK.rightHip
+  ].every((index) => isVisible(userLandmarks, index, 0.14));
+  const guideReady = [
+    LANDMARK.leftShoulder,
+    LANDMARK.rightShoulder,
+    LANDMARK.leftHip,
+    LANDMARK.rightHip
+  ].every((index) => isVisible(guideLandmarks, index, 0.14));
+
+  if (!userReady || !guideReady) {
+    return null;
+  }
+
+  const userBody = bodyFrom(userLandmarks);
+  const guideBody = bodyFrom(guideLandmarks);
+
+  return OVERLAY_LANDMARKS.reduce((overlay, index) => {
+    const point = userLandmarks[index];
+    if (!isVisible(userLandmarks, index, 0.12)) {
+      return overlay;
+    }
+
+    const mapped = normalizeToBody(point, userBody);
+    if (state.guideMirror) {
+      mapped.x *= -1;
+    }
+
+    overlay[index] = {
+      ...denormalizeFromBody(mapped, guideBody),
+      visibility: point.visibility ?? 1
+    };
+    return overlay;
+  }, {});
+}
+
+function buildFitMappedOverlay(userLandmarks, guideLandmarks, shared) {
   const userFit = landmarkFit(userLandmarks, shared);
   const guideFit = landmarkFit(
     guideLandmarks,
@@ -2036,7 +2383,7 @@ function buildUserGuideOverlay(userLandmarks, guideLandmarks) {
 
   return OVERLAY_LANDMARKS.reduce((overlay, index) => {
     const point = userLandmarks[index];
-    if (!isVisible(userLandmarks, index, 0.2)) {
+    if (!isVisible(userLandmarks, index, 0.12)) {
       return overlay;
     }
 
@@ -2051,6 +2398,17 @@ function buildUserGuideOverlay(userLandmarks, guideLandmarks) {
       visibility: point.visibility ?? 1
     };
     return overlay;
+  }, {});
+}
+
+function applyOverlayOffset(overlay) {
+  return Object.entries(overlay).reduce((mapped, [index, point]) => {
+    mapped[index] = {
+      ...point,
+      x: point.x + state.overlayOffset.x,
+      y: point.y + state.overlayOffset.y
+    };
+    return mapped;
   }, {});
 }
 
@@ -2078,6 +2436,40 @@ function landmarkFit(landmarks, indexes) {
     width,
     height
   };
+}
+
+function poseScale(landmarks) {
+  const fit = landmarkFit(
+    landmarks,
+    OVERLAY_LANDMARKS.filter((index) => isVisible(landmarks, index, 0.16))
+  );
+
+  if (fit) {
+    return Math.max(fit.width, fit.height, 0.16);
+  }
+
+  return 0.3;
+}
+
+function smoothLandmarks(previous, next, amount) {
+  if (!previous || !next) {
+    return next;
+  }
+
+  return next.map((point, index) => {
+    const old = previous[index];
+    if (!old || !point) {
+      return point;
+    }
+
+    return {
+      ...point,
+      x: lerp(old.x, point.x, amount),
+      y: lerp(old.y, point.y, amount),
+      z: lerp(old.z ?? 0, point.z ?? 0, amount),
+      visibility: point.visibility ?? old.visibility ?? 1
+    };
+  });
 }
 
 function buildGuideGhost(userLandmarks, guideLandmarks) {
