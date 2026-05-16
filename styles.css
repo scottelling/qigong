@@ -328,12 +328,17 @@ h2 {
 
 .video-frame.is-follow-video .guide-panel {
   inset: 0;
+  z-index: 1;
   width: 100%;
   border: 0;
   border-radius: 0;
   background: #05070a;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.video-frame.is-follow-video #poseCanvas {
+  z-index: 3;
 }
 
 .video-frame.is-follow-video .guide-panel-header {
