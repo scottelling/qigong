@@ -211,6 +211,8 @@ h2 {
 }
 
 .video-frame {
+  --guide-fit: contain;
+  --guide-zoom: 1;
   position: relative;
   display: grid;
   min-height: 430px;
@@ -240,8 +242,13 @@ h2 {
   transform: scaleX(-1);
 }
 
+.video-frame.is-follow-video #cameraVideo {
+  opacity: 0;
+}
+
 #poseCanvas {
   z-index: 2;
+  pointer-events: none;
 }
 
 .empty-state {
@@ -319,6 +326,40 @@ h2 {
   object-fit: cover;
 }
 
+.video-frame.is-follow-video .guide-panel {
+  inset: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: #05070a;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.video-frame.is-follow-video .guide-panel-header {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 12px;
+  min-height: 36px;
+  padding: 0 6px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(17, 19, 24, 0.78);
+  backdrop-filter: blur(12px);
+}
+
+.video-frame.is-follow-video #guideVideo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% * var(--guide-zoom));
+  height: calc(100% * var(--guide-zoom));
+  aspect-ratio: auto;
+  object-fit: var(--guide-fit);
+  transform: translate(-50%, -50%);
+}
+
 .score-badge {
   position: absolute;
   z-index: 4;
@@ -359,6 +400,7 @@ h2 {
 
 .studio-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 72px;
@@ -378,12 +420,17 @@ h2 {
 }
 
 .select-field {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+.compact-field {
+  flex: 0 1 132px;
+  min-width: 132px;
 }
 
 .select-field select {
-  min-width: 0;
+  min-width: 120px;
   width: 100%;
   height: 42px;
   padding: 0 12px;
@@ -406,6 +453,72 @@ h2 {
   width: 18px;
   height: 18px;
   accent-color: var(--primary);
+}
+
+.segmented-control {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 3px;
+  border: 1px solid var(--outline-soft);
+  border-radius: 999px;
+  background: var(--surface-container-high);
+}
+
+.segmented-control label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 94px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--on-surface-variant);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control label:has(input:checked) {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.segmented-control label:has(input:disabled) {
+  opacity: 0.46;
+}
+
+.range-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--outline-soft);
+  border-radius: 999px;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.range-field input {
+  width: 96px;
+  accent-color: var(--primary);
+}
+
+.guide-only-control {
+  display: none;
+}
+
+.studio-panel.has-guide .guide-only-control {
+  display: flex;
 }
 
 .routine-panel {
@@ -800,10 +913,23 @@ h2 {
     flex-direction: column;
   }
 
-  .select-field {
+  .select-field,
+  .range-field {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .segmented-control {
+    width: 100%;
+  }
+
+  .segmented-control label {
+    flex: 1;
+  }
+
+  .range-field input {
+    width: 100%;
   }
 
   .toggle-field {
