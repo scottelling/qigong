@@ -338,9 +338,17 @@ window.addEventListener("resize", () => {
 });
 
 async function startCamera() {
+  const cameraPreflight = getCameraPreflight();
+  if (!cameraPreflight.ok) {
+    setStatus(els.cameraStatus, cameraPreflight.status, "warn", "video-off");
+    state.lastResult = noPoseResult(cameraPreflight.cue);
+    updateDashboard();
+    return false;
+  }
+
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus(els.cameraStatus, "Camera unavailable", "warn", "video-off");
-    state.lastResult = noPoseResult("This browser cannot access a camera.");
+    state.lastResult = noPoseResult("This browser does not expose camera access. Try Safari or Chrome on HTTPS.");
     updateDashboard();
     return false;
   }
@@ -361,8 +369,9 @@ async function startCamera() {
     await refreshCameraList();
     startLoop();
   } catch (error) {
-    setStatus(els.cameraStatus, "Camera blocked", "warn", "video-off");
-    state.lastResult = noPoseResult("Camera access was not granted.");
+    const cameraError = describeCameraError(error);
+    setStatus(els.cameraStatus, cameraError.status, "warn", "video-off");
+    state.lastResult = noPoseResult(cameraError.cue);
     updateDashboard();
     console.error(error);
     return false;
@@ -379,6 +388,58 @@ async function startCamera() {
   }
 
   return true;
+}
+
+function getCameraPreflight() {
+  const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+
+  if (!window.isSecureContext && !isLocalhost) {
+    return {
+      ok: false,
+      status: "HTTPS required",
+      cue:
+        "Camera access is blocked on this plain HTTP address. Open the deployed HTTPS Vercel URL, or use localhost on the Mac."
+    };
+  }
+
+  return { ok: true };
+}
+
+function describeCameraError(error) {
+  const name = error?.name || "";
+
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return {
+      status: "Permission blocked",
+      cue: "Camera permission was blocked. In Safari, allow camera access for this site, then reload."
+    };
+  }
+
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return {
+      status: "No camera found",
+      cue: "No camera was found for this browser. Check the camera device or try another browser."
+    };
+  }
+
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return {
+      status: "Camera busy",
+      cue: "The camera is already in use by another app or tab. Close other camera apps and try again."
+    };
+  }
+
+  if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+    return {
+      status: "Camera mismatch",
+      cue: "The selected camera is unavailable. Pick the default camera or reload the page."
+    };
+  }
+
+  return {
+    status: "Camera blocked",
+    cue: "The browser could not start the camera. Reload the page and check site camera permissions."
+  };
 }
 
 async function loadGuideVideo(file) {
