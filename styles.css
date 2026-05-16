@@ -213,6 +213,8 @@ h2 {
 .video-frame {
   --guide-fit: contain;
   --guide-zoom: 1;
+  --you-color: #6ee7ff;
+  --you-glow: rgba(110, 231, 255, 0.18);
   position: relative;
   display: grid;
   min-height: 430px;
@@ -460,8 +462,8 @@ h2 {
 }
 
 .is-you .hud-dot {
-  background: var(--success);
-  box-shadow: 0 0 0 4px rgba(155, 217, 177, 0.16);
+  background: var(--you-color);
+  box-shadow: 0 0 0 4px var(--you-glow);
 }
 
 .score-badge small,
